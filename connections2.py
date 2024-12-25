@@ -47,6 +47,6 @@ def watch_tcp_connections(interval):
 
 if __name__ == "__main__":
     # Specify the interval in seconds
-    interval = 2  # Change this to your desired interval
+    interval = 4  # Change this to your desired interval
     watch_tcp_connections(interval)
 
