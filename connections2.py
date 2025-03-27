@@ -1,9 +1,12 @@
 import time
 from rich.console import Console
 from rich.table import Table
-from rich.color import Color
+
 
 def read_tcp_connections():
+    """
+    Reads TCP connections from /proc/net/tcp and displays them in a rich table.
+    """
     console = Console()
     
     # Create a table for structured output
@@ -29,24 +32,35 @@ def read_tcp_connections():
                 
                 # Add rows to the table
                 table.add_row(
-                    netid, 
-                    state, 
-                    f"{local_address}:{int(local_port, 16)}", 
+                    netid,
+                    state,
+                    f"{local_address}:{int(local_port, 16)}",
                     f"{peer_address}:{int(peer_port, 16)}"
                 )
                 
         console.print(table)
     
+    except FileNotFoundError:
+        console.print("[bold red]Error: /proc/net/tcp not found[/bold red]")
+    except PermissionError:
+        console.print("[bold red]Error: Permission denied reading /proc/net/tcp[/bold red]")
     except Exception as e:
         console.print(f"[bold red]Error reading /proc/net/tcp: {e}[/bold red]")
 
+
 def watch_tcp_connections(interval):
+    """
+    Continuously watches TCP connections at specified intervals.
+    
+    Args:
+        interval (int): Interval in seconds to refresh the TCP connections display.
+    """
     while True:
         read_tcp_connections()
         time.sleep(interval)
+
 
 if __name__ == "__main__":
     # Specify the interval in seconds
     interval = 4  # Change this to your desired interval
     watch_tcp_connections(interval)
-
