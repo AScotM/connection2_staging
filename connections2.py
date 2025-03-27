@@ -1,66 +1,102 @@
 import time
+import signal
 from rich.console import Console
 from rich.table import Table
+from rich.live import Live
+from rich import print
 
+# TCP state mapping
+TCP_STATES = {
+    '01': 'ESTABLISHED',
+    '02': 'SYN_SENT',
+    '03': 'SYN_RECV',
+    '04': 'FIN_WAIT1',
+    '05': 'FIN_WAIT2',
+    '06': 'TIME_WAIT',
+    '07': 'CLOSE',
+    '08': 'CLOSE_WAIT',
+    '09': 'LAST_ACK',
+    '0A': 'LISTEN',
+    '0B': 'CLOSING'
+}
 
-def read_tcp_connections():
-    """
-    Reads TCP connections from /proc/net/tcp and displays them in a rich table.
-    """
-    console = Console()
-    
-    # Create a table for structured output
+def decode_state(state_hex):
+    """Convert hex state to human-readable form."""
+    return TCP_STATES.get(state_hex, state_hex)
+
+def create_table():
+    """Create and return a configured table."""
     table = Table(show_header=True, header_style="bold green", show_lines=True)
-    table.add_column("Netid", style="bold blue")
-    table.add_column("State", style="yellow")
-    table.add_column("Local Address:Port", style="magenta")
-    table.add_column("Peer Address:Port", style="cyan")
-    
+    table.add_column("Netid", style="bold blue", min_width=8)
+    table.add_column("State", style="yellow", min_width=12)
+    table.add_column("Local Address:Port", style="magenta", min_width=20)
+    table.add_column("Peer Address:Port", style="cyan", min_width=20)
+    return table
+
+def get_tcp_connections():
+    """Read and parse TCP connections from /proc/net/tcp."""
     try:
         with open('/proc/net/tcp', 'r') as file:
-            lines = file.readlines()
-            for line in lines[1:]:  # Skip the first line (headers)
-                line_data = line.split()
-                # Extract relevant information
-                netid = line_data[0]
-                local_address, local_port = line_data[1].split(':')
-                peer_address, peer_port = line_data[2].split(':')
-                state = line_data[3]
-                # Convert addresses from hex to IP format
-                local_address = '.'.join(str(int(local_address[i:i + 2], 16)) for i in range(0, 8, 2))
-                peer_address = '.'.join(str(int(peer_address[i:i + 2], 16)) for i in range(0, 8, 2))
-                
-                # Add rows to the table
-                table.add_row(
-                    netid,
-                    state,
-                    f"{local_address}:{int(local_port, 16)}",
-                    f"{peer_address}:{int(peer_port, 16)}"
-                )
-                
-        console.print(table)
+            return file.readlines()[1:]  # Skip header line
+    except (FileNotFoundError, PermissionError) as e:
+        print(f"[bold red]Error: {e}[/bold red]")
+        return None
+
+def update_table():
+    """Generate an updated table with current TCP connections."""
+    connections = get_tcp_connections()
+    if not connections:
+        return None
     
-    except FileNotFoundError:
-        console.print("[bold red]Error: /proc/net/tcp not found[/bold red]")
-    except PermissionError:
-        console.print("[bold red]Error: Permission denied reading /proc/net/tcp[/bold red]")
-    except Exception as e:
-        console.print(f"[bold red]Error reading /proc/net/tcp: {e}[/bold red]")
-
-
-def watch_tcp_connections(interval):
-    """
-    Continuously watches TCP connections at specified intervals.
+    table = create_table()
     
-    Args:
-        interval (int): Interval in seconds to refresh the TCP connections display.
-    """
-    while True:
-        read_tcp_connections()
-        time.sleep(interval)
+    for line in connections:
+        parts = line.strip().split()
+        if len(parts) < 4:
+            continue
+            
+        netid = parts[0]
+        state = decode_state(parts[3])
+        
+        # Convert address:port
+        local_ip, local_port = parts[1].split(':')
+        peer_ip, peer_port = parts[2].split(':')
+        
+        local_ip = '.'.join(str(int(local_ip[i:i+2], 16)) for i in range(0, 8, 2))
+        peer_ip = '.'.join(str(int(peer_ip[i:i+2], 16)) for i in range(0, 8, 2))
+        
+        table.add_row(
+            netid,
+            state,
+            f"{local_ip}:{int(local_port, 16)}",
+            f"{peer_ip}:{int(peer_port, 16)}"
+        )
+    
+    return table
 
+def watch_tcp_connections(interval=4):
+    """Continuously monitor TCP connections with live updating."""
+    if interval <= 0:
+        raise ValueError("Interval must be positive")
+    
+    def handle_interrupt(signum, frame):
+        nonlocal running
+        running = False
+        print("\n[bold yellow]Monitoring stopped.[/bold yellow]")
+    
+    signal.signal(signal.SIGINT, handle_interrupt)
+    running = True
+    
+    with Live(refresh_per_second=4, vertical_overflow="visible") as live:
+        while running:
+            table = update_table()
+            if table:
+                live.update(table)
+            time.sleep(interval)
 
 if __name__ == "__main__":
-    # Specify the interval in seconds
-    interval = 4  # Change this to your desired interval
-    watch_tcp_connections(interval)
+    try:
+        print("[bold green]Starting TCP connection monitor (Ctrl+C to stop)...[/bold green]")
+        watch_tcp_connections(interval=4)
+    except ValueError as e:
+        print(f"[bold red]{e}[/bold red]")
