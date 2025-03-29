@@ -77,7 +77,7 @@ def watch_tcp_connections(interval=4):
     signal.signal(signal.SIGINT, handle_interrupt)
     
     while True:
-        os.system('clear')  # Clear terminal for each update (simulates live updates)
+        print("\033c", end="")  # Clear terminal for each update (simulates live updates)
         table_lines = update_table()
         if table_lines:
             for line in table_lines:
